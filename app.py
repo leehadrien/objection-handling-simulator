@@ -81,7 +81,7 @@ not rude.""",
         ],
         "coach_focus": "quantifying ROI in terms a CFO would accept, addressing budget-cycle timing, and easing the team's bandwidth concerns without minimizing them",
         "fallback_transition": "Okay.",
-        "voice_id": "21m00Tcm4TlvDq8ikWAM",
+        "voice_id": "gJU2icYQsdEmbGJ65Z8W",
     },
     "lms-it": {
         "title": "LMS Platform Migration",
@@ -127,7 +127,7 @@ technical answer, ease up and move to the next concern.
         ],
         "coach_focus": "technical specificity, fluency on security and compliance, concretely de-risking the migration, and not overselling the AI angle with vague claims",
         "fallback_transition": "Understood.",
-        "voice_id": "pNInz6obpgDQGcFmaJgB",
+        "voice_id": "KeU8nqWFDbaoi0QVUjD3",
     },
     "retail-floor": {
         "title": "Retail Showroom Floor",
@@ -170,7 +170,7 @@ way people actually talk in a store.
         ],
         "coach_focus": "building quick rapport, creating genuine urgency without pressure, and directly addressing the price comparison instead of dodging it",
         "fallback_transition": "Yeah, I hear you, but",
-        "voice_id": "EXAVITQu4vr4xnSDxMaL",
+        "voice_id": "fI4LiKng8DlpjWJyDcsj",
     },
 }
 
@@ -299,7 +299,7 @@ def _persona_reply(session_id, scenario, history):
     return f"{transition} {line}"
 
 
-def _voice_url(text, voice_id="21m00Tcm4TlvDq8ikWAM"):
+def _voice_url(text, voice_id="gJU2icYQsdEmbGJ65Z8W"):
     """Returns an audio data URL for the persona's line, or None if voice
     is not configured. Never raises: any failure just skips audio."""
     if not (_elevenlabs_key and requests):
