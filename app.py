@@ -87,6 +87,11 @@ not rude.
         "coach_focus": "quantifying ROI in terms a CFO would accept, addressing budget-cycle timing, and easing the team's bandwidth concerns without minimizing them",
         "fallback_transition": "Okay.",
         "voice_id": "gJU2icYQsdEmbGJ65Z8W",
+        "accent": {
+            "rgb": "58,231,58",
+            "text": "#3AE73A",
+            "gradient": "radial-gradient(circle at 32% 26%, #C9FFC0 0%, #6FEB5F 26%, #2FCB35 52%, #147A1E 82%, #0B4212 100%)",
+        },
     },
     "lms-it": {
         "title": "LMS Platform Migration",
@@ -138,6 +143,11 @@ technical answer, ease up and move to the next concern.
         "coach_focus": "technical specificity, fluency on security and compliance, concretely de-risking the migration, and not overselling the AI angle with vague claims",
         "fallback_transition": "Understood.",
         "voice_id": "KeU8nqWFDbaoi0QVUjD3",
+        "accent": {
+            "rgb": "46,144,250",
+            "text": "#2E90FA",
+            "gradient": "radial-gradient(circle at 32% 26%, #C6E8FF 0%, #6FB6EB 26%, #2F84CB 52%, #0B4E7A 82%, #06283F 100%)",
+        },
     },
     "retail-floor": {
         "title": "Retail Showroom Floor",
@@ -186,6 +196,11 @@ way people actually talk in a store.
         "coach_focus": "building quick rapport, creating genuine urgency without pressure, and directly addressing the price comparison instead of dodging it",
         "fallback_transition": "Yeah, I hear you, but",
         "voice_id": "fI4LiKng8DlpjWJyDcsj",
+        "accent": {
+            "rgb": "250,144,46",
+            "text": "#FA9028",
+            "gradient": "radial-gradient(circle at 32% 26%, #FFE8C6 0%, #EBAE6F 26%, #CB7C2F 52%, #7A420B 82%, #3F2006 100%)",
+        },
     },
 }
 
@@ -441,7 +456,7 @@ def _scenario_cards_html():
             <span class="diff-badge {diff_class[s['difficulty']]}">{s['difficulty']}</span>
           </div>
           <h3 class="scenario-title">{s['title']}</h3>
-          <div class="persona-line">{s['persona_name']} &middot; {s['persona_role']}</div>
+          <div class="persona-line" style="color: {s['accent']['text']};">{s['persona_name']} &middot; {s['persona_role']}</div>
           <div class="scenario-hook">{s['hook']}</div>
           <div class="skill-tags">{tags}</div>
           <button class="btn-cta scenario-start" data-scenario="{sid}" aria-label="Start the {title_attr} scenario">Start this scenario &#8599;</button>
@@ -498,9 +513,19 @@ TEMPLATE = """
   .btn-ghost:hover { border-color: rgba(255,255,255,0.4); color: #fff; }
 
   .active-brief { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--hairline); }
+  .active-brief .ab-left { display: flex; align-items: center; gap: 18px; }
   .active-brief .ab-name { font-family: 'Archivo Black', sans-serif; font-size: 24px; text-transform: uppercase; margin: 0 0 4px; }
-  .active-brief .ab-role { font-family: 'Geist Mono', monospace; font-size: calc(14px * var(--text-scale)); color: var(--signal); margin-bottom: 10px; }
+  .active-brief .ab-role { font-family: 'Geist Mono', monospace; font-size: calc(14px * var(--text-scale)); margin-bottom: 10px; }
   .active-brief .ab-hook { font-size: calc(15px * var(--text-scale)); color: rgba(255,255,255,0.78); max-width: 560px; line-height: 1.6; }
+
+  .orb-wrap { position: relative; width: 64px; height: 64px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .orb-glow { position: absolute; width: 56px; height: 56px; border-radius: 50%; filter: blur(6px); opacity: 0; background: radial-gradient(circle, rgba(var(--orb-rgb,58,231,58),0.4) 0%, rgba(var(--orb-rgb,58,231,58),0.18) 45%, rgba(var(--orb-rgb,58,231,58),0) 75%); }
+  .orb-core { position: relative; width: 46px; height: 46px; border-radius: 50%; background: var(--orb-gradient, radial-gradient(circle at 32% 26%, #C9FFC0 0%, #6FEB5F 26%, #2FCB35 52%, #147A1E 82%, #0B4212 100%)); box-shadow: 0 6px 20px rgba(var(--orb-rgb,58,231,58),0.35); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .orb-highlight { position: absolute; width: 34%; height: 22%; top: 12%; left: 24%; border-radius: 50%; background: radial-gradient(ellipse, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 75%); }
+  .orb-wrap.speaking .orb-glow { animation: orb-glow-pulse 2.8s cubic-bezier(0.22,0.61,0.36,1) infinite; }
+  .orb-wrap.speaking .orb-core { animation: orb-breathe 2.8s cubic-bezier(0.34,1.1,0.4,1) infinite; }
+  @keyframes orb-glow-pulse { 0% { transform: scale(0.8); opacity: 0.55; } 55% { opacity: 0.14; } 100% { transform: scale(2.05); opacity: 0; } }
+  @keyframes orb-breathe { 0% { transform: scale(1); } 45% { transform: scale(1.07); } 62% { transform: scale(1.045); } 80% { transform: scale(1.065); } 100% { transform: scale(1); } }
 
   #chat-log { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; max-height: 480px; overflow-y: auto; padding-right: 4px; }
   .msg { max-width: 78%; padding: 16px 20px; border-radius: 10px; font-size: calc(17px * var(--text-scale)); line-height: 1.6; }
@@ -586,10 +611,19 @@ TEMPLATE = """
 
   <div id="chat-card" class="card hidden">
     <div class="active-brief">
-      <div>
-        <div class="ab-name" id="ab-name"></div>
-        <div class="ab-role" id="ab-role"></div>
-        <div class="ab-hook" id="ab-hook"></div>
+      <div class="ab-left">
+        <div class="orb-wrap" id="persona-orb" aria-hidden="true">
+          <span class="orb-glow"></span>
+          <span class="orb-glow" style="animation-delay: 0.93s;"></span>
+          <div class="orb-core">
+            <span class="orb-highlight"></span>
+          </div>
+        </div>
+        <div>
+          <div class="ab-name" id="ab-name"></div>
+          <div class="ab-role" id="ab-role"></div>
+          <div class="ab-hook" id="ab-hook"></div>
+        </div>
       </div>
       <button id="change-scenario-btn" class="btn-ghost">Change scenario</button>
     </div>
@@ -648,7 +682,12 @@ function showChat(scenarioId) {
   const s = SCENARIOS[scenarioId];
   document.getElementById('ab-name').textContent = s.persona_name;
   document.getElementById('ab-role').textContent = s.persona_role;
+  document.getElementById('ab-role').style.color = s.accent.text;
   document.getElementById('ab-hook').textContent = s.hook;
+  const orb = document.getElementById('persona-orb');
+  orb.style.setProperty('--orb-rgb', s.accent.rgb);
+  orb.style.setProperty('--orb-gradient', s.accent.gradient);
+  orb.classList.remove('speaking');
   document.getElementById('picker-card').classList.add('hidden');
   document.getElementById('feedback-card').classList.add('hidden');
   document.getElementById('chat-card').classList.remove('hidden');
@@ -662,6 +701,7 @@ function addMessage(role, text) {
   const label = document.createElement('span');
   label.className = 'msg-label';
   label.textContent = role === 'assistant' ? SCENARIOS[currentScenario].persona_name : role === 'notice' ? 'Notice' : 'You';
+  if (role === 'assistant') { label.style.color = SCENARIOS[currentScenario].accent.text; }
   const body = document.createElement('div');
   body.textContent = text;
   div.appendChild(label);
@@ -686,6 +726,17 @@ function setTyping(on) {
   }
 }
 
+function playPersonaAudio(audioUrl) {
+  if (!audioUrl) return;
+  const orb = document.getElementById('persona-orb');
+  const audio = new Audio(audioUrl);
+  audio.addEventListener('playing', () => orb.classList.add('speaking'));
+  audio.addEventListener('ended', () => orb.classList.remove('speaking'));
+  audio.addEventListener('pause', () => orb.classList.remove('speaking'));
+  audio.addEventListener('error', () => orb.classList.remove('speaking'));
+  audio.play().catch(() => orb.classList.remove('speaking'));
+}
+
 async function startScenario(scenarioId) {
   sessionId = crypto.randomUUID();
   showChat(scenarioId);
@@ -697,7 +748,7 @@ async function startScenario(scenarioId) {
   const data = await resp.json();
   setTyping(false);
   addMessage('assistant', data.reply);
-  if (data.audio_url) { new Audio(data.audio_url).play().catch(()=>{}); }
+  playPersonaAudio(data.audio_url);
 }
 
 document.querySelectorAll('.scenario-start').forEach(btn => {
@@ -727,7 +778,7 @@ async function sendMessage() {
     addMessage('notice', data.notice);
   } else {
     addMessage('assistant', data.reply);
-    if (data.audio_url) { new Audio(data.audio_url).play().catch(()=>{}); }
+    playPersonaAudio(data.audio_url);
   }
   input.disabled = false;
   sendBtn.disabled = false;
@@ -793,6 +844,7 @@ def _render_template():
             "persona_name": s["persona_name"],
             "persona_role": s["persona_role"],
             "hook": s["hook"],
+            "accent": s["accent"],
         } for sid, s in SCENARIOS.items()
     })
     html = TEMPLATE.replace("__SCENARIO_CARDS__", _scenario_cards_html())
