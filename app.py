@@ -64,6 +64,10 @@ substantively different from the last vendor's empty promises, and IT and securi
 requirements.
 
 Rules:
+- If the trainee's message is sexual, hateful, violent, or otherwise clearly inappropriate and \
+not a genuine attempt at the sales conversation, do not roleplay around it. Stay in character \
+but redirect briefly and professionally back to the business conversation, without lecturing or \
+repeating back what they said.
 - Stay fully in character as Morgan. Never break character or acknowledge you are an AI.
 - Raise ONE objection or concern per turn. Do not list multiple objections at once.
 - If the consultant's response genuinely addresses your concern with specifics, ease up \
@@ -112,6 +116,10 @@ and security compliance, clean integration with Workday, realistic adoption plan
 whether the AI claims are substantive or just a label.
 
 Rules:
+- If the trainee's message is sexual, hateful, violent, or otherwise clearly inappropriate and \
+not a genuine attempt at the sales conversation, do not roleplay around it. Stay in character \
+but redirect briefly and professionally back to the business conversation, without lecturing or \
+repeating back what they said.
 - Stay fully in character as Dana. Never break character or acknowledge you are an AI.
 - Raise ONE technical or risk concern per turn. Do not list multiple at once.
 - Push for specifics. If the consultant gives a vague or marketing-flavored answer, ask a \
@@ -154,6 +162,10 @@ elsewhere, whether you should just "keep looking" instead of deciding today, del
 timeline, and the return policy in case it does not fit your space.
 
 Rules:
+- If the trainee's message is sexual, hateful, violent, or otherwise clearly inappropriate and \
+not a genuine attempt at the conversation, do not roleplay around it. Stay in character but \
+redirect briefly, casually, back to the conversation, without lecturing or repeating back what \
+they said.
 - Stay fully in character as Jordan. Never break character or acknowledge you are an AI.
 - Raise ONE concern or hesitation per turn, casually, the way a real shopper talks, not a \
 business objection format.
@@ -193,6 +205,20 @@ READINESS: one sentence overall assessment
 Be specific and reference what they actually said. Be constructive, not harsh. \
 Do not use em dashes."""
 
+MODERATION_PROMPT = """You are a content safety classifier for a public sales-training demo. \
+A visitor just typed the following message as their turn in a practice sales roleplay.
+
+Classify it as UNSAFE only if it contains sexual content, hate speech or slurs, threats or \
+graphic violence, self-harm content, or harassment. Ordinary rudeness, skepticism, blunt \
+pushback, or off-topic small talk in a sales conversation is SAFE, even if dismissive or \
+mildly rude. When in doubt, prefer SAFE.
+
+Respond with exactly one word: SAFE or UNSAFE.
+
+Message: {message}"""
+
+SAFETY_NOTICE = "That message doesn't fit this practice scenario. Try a response focused on the sales conversation."
+
 try:
     import anthropic
     _client = anthropic.Anthropic() if os.environ.get("ANTHROPIC_API_KEY") else None
@@ -215,6 +241,29 @@ def _extract_text(response):
         if getattr(block, "type", None) == "text":
             return block.text.strip()
     return ""
+
+
+def _is_message_safe(message):
+    """Checks a trainee's message before it reaches the persona or gets
+    saved. Returns True (safe) or False (blocked).
+
+    In fallback mode there is no live model to manipulate, so there is
+    nothing to check. If the classifier call itself errors (network blip,
+    timeout), this fails open rather than breaking the demo for a
+    legitimate visitor, on the theory that the exact same outage would
+    also break the persona call right after, so a bad actor gains nothing
+    from a moderation-call failure specifically."""
+    if not _client:
+        return True
+    try:
+        response = _client.messages.create(
+            model="claude-sonnet-5", max_tokens=6,
+            messages=[{"role": "user", "content": MODERATION_PROMPT.format(message=message)}],
+        )
+        verdict = _extract_text(response).strip().upper()
+        return "UNSAFE" not in verdict
+    except Exception:
+        return True
 
 
 # ---------- Storage ----------
@@ -459,6 +508,9 @@ TEMPLATE = """
   .msg-persona .msg-label { color: var(--signal); }
   .msg-user { background: rgba(58,231,58,0.10); border: 1px solid rgba(58,231,58,0.25); align-self: flex-end; }
   .msg-user .msg-label { color: rgba(255,255,255,0.55); }
+  .msg-notice { background: rgba(255,255,255,0.04); border: 1px dashed var(--hairline); align-self: center; max-width: 90%; text-align: center; }
+  .msg-notice .msg-label { color: var(--muted); }
+  .msg-notice div:last-child { color: var(--muted); }
   .msg-label { font-family: 'Geist Mono', monospace; font-size: calc(13px * var(--text-scale)); letter-spacing: 1px; text-transform: uppercase; display: block; margin-bottom: 6px; }
   .input-row { display: flex; gap: 12px; }
   #trainee-input { flex: 1; background: #0D0D0E; border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 16px; color: #fff; font-family: 'Geist', sans-serif; font-size: calc(17px * var(--text-scale)); line-height: 1.5; resize: none; }
@@ -606,16 +658,17 @@ function showChat(scenarioId) {
 function addMessage(role, text) {
   const log = document.getElementById('chat-log');
   const div = document.createElement('div');
-  div.className = 'msg ' + (role === 'assistant' ? 'msg-persona' : 'msg-user');
+  div.className = 'msg ' + (role === 'assistant' ? 'msg-persona' : role === 'notice' ? 'msg-notice' : 'msg-user');
   const label = document.createElement('span');
   label.className = 'msg-label';
-  label.textContent = role === 'assistant' ? SCENARIOS[currentScenario].persona_name : 'You';
+  label.textContent = role === 'assistant' ? SCENARIOS[currentScenario].persona_name : role === 'notice' ? 'Notice' : 'You';
   const body = document.createElement('div');
   body.textContent = text;
   div.appendChild(label);
   div.appendChild(body);
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
+  return div;
 }
 
 function setTyping(on) {
@@ -658,7 +711,7 @@ async function sendMessage() {
   const sendBtn = document.getElementById('send-btn');
   const text = input.value.trim();
   if (!text || !sessionId) return;
-  addMessage('user', text);
+  const userBubble = addMessage('user', text);
   input.value = '';
   input.disabled = true;
   sendBtn.disabled = true;
@@ -669,11 +722,16 @@ async function sendMessage() {
   });
   const data = await resp.json();
   setTyping(false);
-  addMessage('assistant', data.reply);
+  if (data.blocked) {
+    userBubble.remove();
+    addMessage('notice', data.notice);
+  } else {
+    addMessage('assistant', data.reply);
+    if (data.audio_url) { new Audio(data.audio_url).play().catch(()=>{}); }
+  }
   input.disabled = false;
   sendBtn.disabled = false;
   input.focus();
-  if (data.audio_url) { new Audio(data.audio_url).play().catch(()=>{}); }
 }
 
 document.getElementById('send-btn').addEventListener('click', sendMessage);
@@ -778,6 +836,9 @@ def api_respond():
     message = data["message"]
     scenario_id = _get_scenario_id(session_id)
     scenario = SCENARIOS.get(scenario_id, SCENARIOS["ld-tech"])
+
+    if not _is_message_safe(message):
+        return jsonify({"blocked": True, "notice": SAFETY_NOTICE})
 
     _save_message(session_id, "user", message)
     history = _get_messages(session_id)
