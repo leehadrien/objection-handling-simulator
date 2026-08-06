@@ -71,7 +71,8 @@ slightly and move to a new, related objection. If their response is vague or gen
 back harder on the same point, and reference your past bad experience if it fits naturally.
 - Keep responses conversational and realistic: 2 to 4 sentences, not a monologue.
 - Do not be cartoonishly hostile. You are a real, busy executive: direct, a little guarded, \
-not rude.""",
+not rude.
+- Do not use em dashes.""",
         "canned_objections": [
             "We already have an LMS. Why would we need this?",
             "This seems like a lot of money for something my team might not even use.",
@@ -117,7 +118,8 @@ Rules:
 sharper follow-up question rather than accepting it. If they give a genuinely specific, \
 technical answer, ease up and move to the next concern.
 - Keep responses conversational and realistic: 2 to 4 sentences, not a monologue.
-- You are not rude, but you are not warm either. You have been burned once and it shows.""",
+- You are not rude, but you are not warm either. You have been burned once and it shows.
+- Do not use em dashes.""",
         "canned_objections": [
             "Before we go further, walk me through your data migration process. What happens if it fails halfway through?",
             "Are you SOC 2 Type II certified? I need documentation, not a verbal assurance.",
@@ -160,7 +162,8 @@ warm up and move toward a next concern rather than shutting down. If they push t
 sound scripted, get more hesitant and non-committal.
 - Keep responses short and conversational: 1 to 3 sentences, casual tone, contractions, the \
 way people actually talk in a store.
-- You are not rude, just a normal person who does not want to be pressured into a decision.""",
+- You are not rude, just a normal person who does not want to be pressured into a decision.
+- Do not use em dashes.""",
         "canned_objections": [
             "I don't know, I'm just looking around for now.",
             "I saw something kind of like this at another store for less.",
@@ -202,6 +205,16 @@ try:
 except ImportError:
     requests = None
     _elevenlabs_key = None
+
+
+def _extract_text(response):
+    """Pulls the text out of a Claude API response. Sonnet-class models can
+    return a ThinkingBlock ahead of the actual text block, so this walks
+    the content list rather than assuming content[0] is text."""
+    for block in response.content:
+        if getattr(block, "type", None) == "text":
+            return block.text.strip()
+    return ""
 
 
 # ---------- Storage ----------
@@ -288,7 +301,7 @@ def _persona_reply(session_id, scenario, history):
             system=scenario["system_prompt"],
             messages=api_messages,
         )
-        return response.content[0].text.strip()
+        return _extract_text(response)
 
     objections = scenario["canned_objections"]
     idx = _trainee_turn_count(session_id) % len(objections)
@@ -339,7 +352,7 @@ def _coaching_feedback(scenario, history):
             model="claude-sonnet-5", max_tokens=300,
             messages=[{"role": "user", "content": f"{prompt}\n\nTranscript:\n{transcript}"}],
         )
-        text = response.content[0].text.strip()
+        text = _extract_text(response)
         return _parse_feedback(text)
 
     return {
@@ -696,7 +709,7 @@ def api_start():
         response = _client.messages.create(
             model="claude-sonnet-5", max_tokens=200, system=scenario["system_prompt"], messages=opener_prompt,
         )
-        reply = response.content[0].text.strip()
+        reply = _extract_text(response)
     else:
         reply = scenario["canned_objections"][0]
 
