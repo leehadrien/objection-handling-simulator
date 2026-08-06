@@ -385,6 +385,7 @@ def _scenario_cards_html():
     for sid in SCENARIO_ORDER:
         s = SCENARIOS[sid]
         tags = "".join(f'<span class="skill-tag">{t}</span>' for t in s["skills"])
+        title_attr = s["title"].replace("&", "&amp;").replace('"', "&quot;")
         cards.append(f"""
         <div class="scenario-card" data-scenario="{sid}">
           <div class="scenario-top">
@@ -394,7 +395,7 @@ def _scenario_cards_html():
           <div class="persona-line">{s['persona_name']} &middot; {s['persona_role']}</div>
           <div class="scenario-hook">{s['hook']}</div>
           <div class="skill-tags">{tags}</div>
-          <button class="btn-cta scenario-start" data-scenario="{sid}">Start this scenario &#8599;</button>
+          <button class="btn-cta scenario-start" data-scenario="{sid}" aria-label="Start the {title_attr} scenario">Start this scenario &#8599;</button>
         </div>
         """)
     return "\n".join(cards)
@@ -402,7 +403,7 @@ def _scenario_cards_html():
 
 TEMPLATE = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Roleplay Training Studio</title>
@@ -417,60 +418,63 @@ TEMPLATE = """
   body { background: var(--monolith); color: var(--ink-white); font-family: 'Geist', sans-serif; margin: 0; padding: 0 40px 40px; }
   .topbar { height: 3px; background: var(--signal); margin: 0 -40px 40px; }
   h1 { font-family: 'Archivo Black', sans-serif; font-size: 48px; letter-spacing: -1.5px; text-transform: uppercase; margin: 0 0 8px; line-height: 1.03; }
-  .subtitle { font-family: 'Geist Mono', monospace; font-weight: 500; color: rgba(255,255,255,0.6); font-size: 14px; letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 14px; }
-  .tagline { font-size: 19px; line-height: 1.5; color: rgba(255,255,255,0.88); max-width: 780px; margin-bottom: 28px; }
+  .subtitle { font-family: 'Geist Mono', monospace; font-weight: 500; color: rgba(255,255,255,0.65); font-size: 15px; letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 14px; }
+  .tagline { font-size: 20px; line-height: 1.6; color: rgba(255,255,255,0.9); max-width: 780px; margin-bottom: 28px; }
   .value-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 32px; }
   .value-card { background: var(--surface); border: 1px solid var(--hairline); border-radius: 10px; padding: 22px; }
-  .value-card .v-label { font-family: 'Geist Mono', monospace; font-weight: 500; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; color: var(--signal); margin-bottom: 10px; }
-  .value-card .v-body { font-size: 15px; line-height: 1.5; color: rgba(255,255,255,0.85); }
+  .value-card .v-label { font-family: 'Geist Mono', monospace; font-weight: 500; font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: var(--signal); margin-bottom: 10px; }
+  .value-card .v-body { font-size: 16px; line-height: 1.6; color: rgba(255,255,255,0.88); }
   .card { background: var(--surface); border: 1px solid var(--hairline); border-radius: 10px; padding: 28px; margin-bottom: 24px; }
-  .card h2 { font-family: 'Geist Mono', monospace; font-weight: 500; font-size: 15px; text-transform: uppercase; letter-spacing: 1.2px; color: rgba(255,255,255,0.6); margin: 0 0 8px; }
-  .section-note { font-size: 15px; line-height: 1.5; color: var(--muted); margin: 0 0 18px; max-width: 680px; }
+  .card h2 { font-family: 'Geist Mono', monospace; font-weight: 500; font-size: 16px; text-transform: uppercase; letter-spacing: 1.2px; color: rgba(255,255,255,0.65); margin: 0 0 8px; }
+  .section-note { font-size: 16px; line-height: 1.6; color: var(--muted); margin: 0 0 18px; max-width: 680px; }
 
   .scenario-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
   .scenario-card { background: #0D0D0E; border: 1px solid var(--hairline); border-radius: 10px; padding: 24px; display: flex; flex-direction: column; }
   .scenario-top { margin-bottom: 12px; }
-  .diff-badge { font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; border: 1px solid; }
+  .diff-badge { font-family: 'Geist Mono', monospace; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; padding: 5px 12px; border-radius: 999px; border: 1px solid; }
   .diff-low { color: #9BE39B; border-color: rgba(155,227,155,0.4); }
   .diff-medium { color: #FAC775; border-color: rgba(250,199,117,0.4); }
   .diff-high { color: #F0997B; border-color: rgba(240,153,123,0.4); }
-  .scenario-title { font-family: 'Archivo Black', sans-serif; font-size: 20px; text-transform: uppercase; letter-spacing: -0.3px; margin: 0 0 8px; }
-  .persona-line { font-family: 'Geist Mono', monospace; font-size: 12px; color: var(--signal); margin-bottom: 12px; letter-spacing: 0.3px; }
-  .scenario-hook { font-size: 14px; line-height: 1.5; color: rgba(255,255,255,0.75); margin-bottom: 16px; flex-grow: 1; }
+  .scenario-title { font-family: 'Archivo Black', sans-serif; font-size: 22px; text-transform: uppercase; letter-spacing: -0.3px; margin: 0 0 8px; }
+  .persona-line { font-family: 'Geist Mono', monospace; font-size: 14px; color: var(--signal); margin-bottom: 12px; letter-spacing: 0.3px; line-height: 1.4; }
+  .scenario-hook { font-size: 15px; line-height: 1.6; color: rgba(255,255,255,0.8); margin-bottom: 16px; flex-grow: 1; }
   .skill-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
-  .skill-tag { font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); background: rgba(255,255,255,0.05); border: 1px solid var(--hairline); border-radius: 6px; padding: 4px 8px; }
+  .skill-tag { font-family: 'Geist Mono', monospace; font-size: 13px; letter-spacing: 0.5px; text-transform: uppercase; color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.06); border: 1px solid var(--hairline); border-radius: 6px; padding: 5px 10px; }
 
-  .btn-cta { background: var(--signal); color: #0D0D0D; font-family: 'Geist Mono', monospace; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; font-size: 14px; padding: 16px 30px; border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 6px 20px rgba(58,231,58,0.35); transition: all 150ms ease-out; width: 100%; }
+  .btn-cta { background: var(--signal); color: #0D0D0D; font-family: 'Geist Mono', monospace; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; font-size: 15px; padding: 16px 30px; border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 6px 20px rgba(58,231,58,0.35); transition: all 150ms ease-out; width: 100%; }
   .btn-cta:hover { background: transparent; color: var(--signal); border: 1px solid var(--signal); box-shadow: none; }
   .btn-cta:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-ghost { background: transparent; color: rgba(255,255,255,0.7); font-family: 'Geist Mono', monospace; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; font-size: 13px; padding: 12px 20px; border: 1px solid var(--hairline); border-radius: 10px; cursor: pointer; }
+  .btn-ghost { background: transparent; color: rgba(255,255,255,0.75); font-family: 'Geist Mono', monospace; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; font-size: 14px; padding: 12px 20px; border: 1px solid var(--hairline); border-radius: 10px; cursor: pointer; }
   .btn-ghost:hover { border-color: rgba(255,255,255,0.4); color: #fff; }
 
   .active-brief { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--hairline); }
-  .active-brief .ab-name { font-family: 'Archivo Black', sans-serif; font-size: 22px; text-transform: uppercase; margin: 0 0 4px; }
-  .active-brief .ab-role { font-family: 'Geist Mono', monospace; font-size: 13px; color: var(--signal); margin-bottom: 10px; }
-  .active-brief .ab-hook { font-size: 14px; color: rgba(255,255,255,0.7); max-width: 560px; line-height: 1.5; }
+  .active-brief .ab-name { font-family: 'Archivo Black', sans-serif; font-size: 24px; text-transform: uppercase; margin: 0 0 4px; }
+  .active-brief .ab-role { font-family: 'Geist Mono', monospace; font-size: 14px; color: var(--signal); margin-bottom: 10px; }
+  .active-brief .ab-hook { font-size: 15px; color: rgba(255,255,255,0.78); max-width: 560px; line-height: 1.6; }
 
   #chat-log { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; max-height: 480px; overflow-y: auto; padding-right: 4px; }
-  .msg { max-width: 78%; padding: 14px 18px; border-radius: 10px; font-size: 15px; line-height: 1.5; }
+  .msg { max-width: 78%; padding: 16px 20px; border-radius: 10px; font-size: 17px; line-height: 1.6; }
   .msg-persona { background: #1D1F20; border: 1px solid var(--hairline); align-self: flex-start; }
   .msg-persona .msg-label { color: var(--signal); }
   .msg-user { background: rgba(58,231,58,0.10); border: 1px solid rgba(58,231,58,0.25); align-self: flex-end; }
   .msg-user .msg-label { color: rgba(255,255,255,0.55); }
-  .msg-label { font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; display: block; margin-bottom: 6px; }
+  .msg-label { font-family: 'Geist Mono', monospace; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; display: block; margin-bottom: 6px; }
   .input-row { display: flex; gap: 12px; }
-  #trainee-input { flex: 1; background: #0D0D0E; border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 16px; color: #fff; font-family: 'Geist', sans-serif; font-size: 15px; resize: none; }
-  #trainee-input:focus { outline: none; border-color: var(--signal); }
+  #trainee-input { flex: 1; background: #0D0D0E; border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 16px; color: #fff; font-family: 'Geist', sans-serif; font-size: 17px; line-height: 1.5; resize: none; }
+  #trainee-input:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-color: var(--signal); }
   .controls-row { display: flex; gap: 12px; margin-top: 16px; }
   .hidden { display: none !important; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .feedback-block { margin-top: 8px; }
-  .feedback-block h3 { font-family: 'Geist Mono', monospace; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--signal); margin: 18px 0 8px; }
-  .feedback-block ul { margin: 0; padding-left: 20px; }
-  .feedback-block li { font-size: 15px; line-height: 1.6; color: rgba(255,255,255,0.88); margin-bottom: 4px; }
-  .feedback-block p { font-size: 15px; line-height: 1.6; color: rgba(255,255,255,0.88); }
-  .typing { color: var(--muted); font-family: 'Geist Mono', monospace; font-size: 13px; }
+  .feedback-block h3 { font-family: 'Geist Mono', monospace; font-size: 15px; text-transform: uppercase; letter-spacing: 1px; color: var(--signal); margin: 18px 0 8px; }
+  .feedback-block ul { margin: 0; padding-left: 22px; }
+  .feedback-block li { font-size: 17px; line-height: 1.6; color: rgba(255,255,255,0.9); margin-bottom: 6px; }
+  .feedback-block p { font-size: 17px; line-height: 1.6; color: rgba(255,255,255,0.9); }
+  .typing { color: var(--muted); font-family: 'Geist Mono', monospace; font-size: 15px; }
 
   #send-btn { width: auto; padding: 14px 28px; }
+  button:focus-visible, .scenario-card:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+  #feedback-card:focus { outline: 2px solid var(--signal); outline-offset: 2px; }
 
   @media (max-width: 900px) {
     .scenario-grid { grid-template-columns: 1fr; }
@@ -516,8 +520,9 @@ TEMPLATE = """
       </div>
       <button id="change-scenario-btn" class="btn-ghost">Change scenario</button>
     </div>
-    <div id="chat-log"></div>
+    <div id="chat-log" role="log" aria-live="polite" aria-label="Roleplay conversation"></div>
     <div class="input-row">
+      <label for="trainee-input" class="sr-only">Type your response to the buyer</label>
       <textarea id="trainee-input" rows="2" placeholder="Type your response..."></textarea>
       <button id="send-btn" class="btn-cta">Send</button>
     </div>
@@ -527,7 +532,7 @@ TEMPLATE = """
     </div>
   </div>
 
-  <div id="feedback-card" class="card hidden">
+  <div id="feedback-card" class="card hidden" tabindex="-1">
     <h2>Coaching feedback</h2>
     <div id="feedback-body" class="feedback-block"></div>
   </div>
@@ -608,10 +613,13 @@ document.getElementById('change-scenario-btn').addEventListener('click', showPic
 
 async function sendMessage() {
   const input = document.getElementById('trainee-input');
+  const sendBtn = document.getElementById('send-btn');
   const text = input.value.trim();
   if (!text || !sessionId) return;
   addMessage('user', text);
   input.value = '';
+  input.disabled = true;
+  sendBtn.disabled = true;
   setTyping(true);
   const resp = await fetch('/api/respond', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -620,6 +628,9 @@ async function sendMessage() {
   const data = await resp.json();
   setTyping(false);
   addMessage('assistant', data.reply);
+  input.disabled = false;
+  sendBtn.disabled = false;
+  input.focus();
   if (data.audio_url) { new Audio(data.audio_url).play().catch(()=>{}); }
 }
 
@@ -664,6 +675,7 @@ document.getElementById('feedback-btn').addEventListener('click', async () => {
   }
   card.classList.remove('hidden');
   card.scrollIntoView({behavior: 'smooth', block: 'start'});
+  card.focus();
 });
 
 document.getElementById('restart-btn').addEventListener('click', () => {
