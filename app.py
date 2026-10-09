@@ -234,6 +234,29 @@ Message: {message}"""
 
 SAFETY_NOTICE = "That message doesn't fit this practice scenario. Try a response focused on the sales conversation."
 
+PERSONA_ERROR_NOTICE = (
+    "The buyer could not be reached just then. Your message was kept, so send it again."
+)
+
+# The instruction that produces the persona's first objection. It is also
+# replayed as the leading turn when the stored history is handed back to the
+# model, so that history reads as the same conversation rather than opening
+# with an assistant message that has nothing before it.
+OPENER_PROMPT = (
+    "Begin the conversation. Open with your first objection or concern, in character, "
+    "as if the other person just introduced themselves to you."
+)
+
+# The prompts ask for 2 to 4 sentences. Measured replies run to roughly 130
+# tokens, which sat close enough to the old 200-token ceiling that a long turn
+# could be cut off mid-sentence.
+MAX_REPLY_TOKENS = 400
+
+
+class PersonaUnavailable(Exception):
+    """The model could not be reached for this turn. Raised so the route can
+    answer with a real status instead of a blank bubble."""
+
 try:
     import anthropic
     _client = anthropic.Anthropic() if os.environ.get("ANTHROPIC_API_KEY") else None
@@ -253,7 +276,7 @@ def _extract_text(response):
     return a ThinkingBlock ahead of the actual text block, so this walks
     the content list rather than assuming content[0] is text."""
     for block in response.content:
-        if getattr(block, "type", None) == "text":
+        if getattr(block, "type", None) == "text" and (block.text or "").strip():
             return block.text.strip()
     return ""
 
@@ -325,6 +348,18 @@ def _get_scenario_id(session_id):
 
 
 def _save_message(session_id, role, content):
+    """Writes one turn and reports whether it was stored.
+
+    Empty content is refused. A blank row is not a turn, the model API
+    rejects an empty content block inside a history, and a single stored
+    blank was enough to break every later turn in that session.
+    """
+    content = (content or "").strip()
+    if not content:
+        app.logger.warning(
+            "refusing to store an empty %s message for session %s", role, session_id
+        )
+        return False
     conn = _init_db()
     conn.execute(
         "INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
@@ -332,12 +367,14 @@ def _save_message(session_id, role, content):
     )
     conn.commit()
     conn.close()
+    return True
 
 
 def _get_messages(session_id):
     conn = _init_db()
     rows = conn.execute(
-        "SELECT role, content FROM messages WHERE session_id = ? ORDER BY id ASC",
+        "SELECT role, content FROM messages WHERE session_id = ? "
+        "AND TRIM(COALESCE(content, '')) <> '' ORDER BY id ASC",
         (session_id,),
     ).fetchall()
     conn.close()
@@ -356,17 +393,10 @@ def _trainee_turn_count(session_id):
 
 # ---------- Persona ----------
 
-def _persona_reply(session_id, scenario, history):
-    if _client:
-        api_messages = [{"role": m["role"], "content": m["content"]} for m in history]
-        response = _client.messages.create(
-            model="claude-sonnet-5",
-            max_tokens=200,
-            system=scenario["system_prompt"],
-            messages=api_messages,
-        )
-        return _extract_text(response)
-
+def _canned_reply(session_id, scenario):
+    """The scripted objection for this turn. Used when no API key is
+    configured, and as the safety net when a live call comes back with
+    nothing usable, so the conversation always has somewhere to go."""
     objections = scenario["canned_objections"]
     idx = _trainee_turn_count(session_id) % len(objections)
     line = objections[idx]
@@ -374,6 +404,88 @@ def _persona_reply(session_id, scenario, history):
         return line
     transition = scenario.get("fallback_transition", "Okay.")
     return f"{transition} {line}"
+
+
+def _api_messages(history):
+    """Builds the messages array for the model from stored history.
+
+    Rows with empty content are dropped. The API rejects them, and one
+    left behind by an earlier failed turn would otherwise break every
+    turn after it for the life of the session.
+
+    The array is also made to start with a user turn. Stored history
+    opens with the persona's own first objection, and handing that to the
+    model as the leading message reads as something the trainee said,
+    which is why the persona would occasionally answer itself by name.
+    Replaying the opener instruction puts that first objection back in
+    its place as a reply.
+    """
+    messages = [
+        {"role": m["role"], "content": m["content"]}
+        for m in history
+        if (m.get("content") or "").strip()
+    ]
+    if messages and messages[0]["role"] == "assistant":
+        messages.insert(0, {"role": "user", "content": OPENER_PROMPT})
+    return messages
+
+
+def _call_persona(scenario, api_messages, label):
+    """One persona turn, with the empty-response case treated as a failure.
+
+    An empty reply used to reach the browser as a successful turn: the
+    bubble rendered blank, the voice dutifully spoke the silence, and the
+    blank row went into the history where every later turn tripped over
+    it. A response carrying no usable text is now retried once with a
+    larger budget, and the caller decides what to do if that fails too.
+
+    Returns the reply text, or "" if the model answered but said nothing
+    usable. Raises PersonaUnavailable if it could not be reached at all.
+    """
+    last_error = None
+    for max_tokens in (MAX_REPLY_TOKENS, MAX_REPLY_TOKENS * 2):
+        try:
+            response = _client.messages.create(
+                model="claude-sonnet-5",
+                max_tokens=max_tokens,
+                system=scenario["system_prompt"],
+                messages=api_messages,
+            )
+        except Exception as exc:
+            last_error = exc
+            app.logger.warning(
+                "%s call failed (max_tokens=%s): %r", label, max_tokens, exc
+            )
+            continue
+        text = _extract_text(response)
+        if text:
+            return text
+        app.logger.warning(
+            "%s call returned no usable text (max_tokens=%s, stop_reason=%s, blocks=%s)",
+            label, max_tokens, getattr(response, "stop_reason", None),
+            [getattr(b, "type", None) for b in getattr(response, "content", [])],
+        )
+    if last_error is not None:
+        raise PersonaUnavailable(repr(last_error))
+    return ""
+
+
+def _persona_opener(scenario):
+    """The persona's first objection, never a blank bubble."""
+    if not _client:
+        return scenario["canned_objections"][0]
+    return _call_persona(
+        scenario, [{"role": "user", "content": OPENER_PROMPT}], "opener"
+    ) or scenario["canned_objections"][0]
+
+
+def _persona_reply(session_id, scenario, history):
+    """The persona's answer to the trainee. Never empty."""
+    if not _client:
+        return _canned_reply(session_id, scenario)
+    return _call_persona(
+        scenario, _api_messages(history), "persona"
+    ) or _canned_reply(session_id, scenario)
 
 
 def _voice_url(text, voice_id="gJU2icYQsdEmbGJ65Z8W"):
@@ -677,6 +789,18 @@ function showPicker() {
   document.getElementById('chat-log').innerHTML = '';
 }
 
+// The composer stays closed until the server confirms the session is open.
+// It used to be live from the moment the chat card appeared, so a visitor who
+// types quickly could post into a session that had no opening turn yet.
+function setComposerEnabled(on, placeholder) {
+  const input = document.getElementById('trainee-input');
+  const sendBtn = document.getElementById('send-btn');
+  input.disabled = !on;
+  sendBtn.disabled = !on;
+  input.placeholder = placeholder || (on ? 'Type your response...' : 'Connecting to the buyer...');
+  if (on) input.focus();
+}
+
 function showChat(scenarioId) {
   currentScenario = scenarioId;
   const s = SCENARIOS[scenarioId];
@@ -692,6 +816,7 @@ function showChat(scenarioId) {
   document.getElementById('feedback-card').classList.add('hidden');
   document.getElementById('chat-card').classList.remove('hidden');
   document.getElementById('chat-log').innerHTML = '';
+  setComposerEnabled(false);
 }
 
 function addMessage(role, text) {
@@ -741,14 +866,30 @@ async function startScenario(scenarioId) {
   sessionId = crypto.randomUUID();
   showChat(scenarioId);
   setTyping(true);
-  const resp = await fetch('/api/start', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({session_id: sessionId, scenario_id: scenarioId})
-  });
-  const data = await resp.json();
+  let data = null;
+  try {
+    const resp = await fetch('/api/start', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({session_id: sessionId, scenario_id: scenarioId})
+    });
+    data = await resp.json();
+  } catch (e) {
+    data = null;
+  }
   setTyping(false);
+
+  // Without an opening turn there is no session to practise against, so say so
+  // and leave the composer closed rather than accepting messages into nothing.
+  if (!data || data.error || !data.reply) {
+    sessionId = null;
+    addMessage('notice', (data && data.notice) || 'The buyer could not be reached. Pick a scenario again to retry.');
+    setComposerEnabled(false, 'Scenario did not start');
+    return;
+  }
+
   addMessage('assistant', data.reply);
   playPersonaAudio(data.audio_url);
+  setComposerEnabled(true);
 }
 
 document.querySelectorAll('.scenario-start').forEach(btn => {
@@ -761,28 +902,38 @@ async function sendMessage() {
   const input = document.getElementById('trainee-input');
   const sendBtn = document.getElementById('send-btn');
   const text = input.value.trim();
-  if (!text || !sessionId) return;
+  if (!text || !sessionId || input.disabled) return;
   const userBubble = addMessage('user', text);
   input.value = '';
-  input.disabled = true;
-  sendBtn.disabled = true;
+  setComposerEnabled(false, 'Waiting for the buyer...');
   setTyping(true);
-  const resp = await fetch('/api/respond', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({session_id: sessionId, message: text})
-  });
-  const data = await resp.json();
+
+  let data = null;
+  try {
+    const resp = await fetch('/api/respond', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({session_id: sessionId, message: text})
+    });
+    data = await resp.json();
+  } catch (e) {
+    data = null;
+  }
   setTyping(false);
-  if (data.blocked) {
+
+  if (!data || data.error) {
+    // The turn failed. Say so, and hand the message back so one tap resends it
+    // instead of the conversation going quietly dead.
+    userBubble.remove();
+    addMessage('notice', (data && data.notice) || 'That turn did not go through. Send it again.');
+    input.value = text;
+  } else if (data.blocked) {
     userBubble.remove();
     addMessage('notice', data.notice);
   } else {
     addMessage('assistant', data.reply);
     playPersonaAudio(data.audio_url);
   }
-  input.disabled = false;
-  sendBtn.disabled = false;
-  input.focus();
+  setComposerEnabled(true);
 }
 
 document.getElementById('send-btn').addEventListener('click', sendMessage);
@@ -868,24 +1019,31 @@ def api_start():
 
     _create_session(session_id, scenario_id)
 
-    if _client:
-        opener_prompt = [{"role": "user", "content": "Begin the conversation. Open with your first objection or concern, in character, as if the other person just introduced themselves to you."}]
-        response = _client.messages.create(
-            model="claude-sonnet-5", max_tokens=200, system=scenario["system_prompt"], messages=opener_prompt,
-        )
-        reply = _extract_text(response)
-    else:
-        reply = scenario["canned_objections"][0]
+    try:
+        reply = _persona_opener(scenario)
+    except PersonaUnavailable:
+        return jsonify({"error": True, "notice": PERSONA_ERROR_NOTICE}), 503
 
     _save_message(session_id, "assistant", reply)
-    return jsonify({"reply": reply, "audio_url": _voice_url(reply, scenario.get("voice_id"))})
+    return jsonify({
+        "ready": True,
+        "session_id": session_id,
+        "reply": reply,
+        "audio_url": _voice_url(reply, scenario.get("voice_id")),
+    })
 
 
 @app.route("/api/respond", methods=["POST"])
 def api_respond():
     data = request.get_json(force=True)
-    session_id = data["session_id"]
-    message = data["message"]
+    session_id = data.get("session_id")
+    message = (data.get("message") or "").strip()
+    if not session_id or not message:
+        return jsonify({
+            "error": True,
+            "notice": "That message did not reach the session. Send it again.",
+        }), 400
+
     scenario_id = _get_scenario_id(session_id)
     scenario = SCENARIOS.get(scenario_id, SCENARIOS["ld-tech"])
 
@@ -894,9 +1052,14 @@ def api_respond():
 
     _save_message(session_id, "user", message)
     history = _get_messages(session_id)
-    reply = _persona_reply(session_id, scenario, history)
-    _save_message(session_id, "assistant", reply)
+    try:
+        reply = _persona_reply(session_id, scenario, history)
+    except PersonaUnavailable:
+        # The trainee's message is already stored, so resending picks the
+        # conversation up where it left off instead of restarting it.
+        return jsonify({"error": True, "notice": PERSONA_ERROR_NOTICE}), 503
 
+    _save_message(session_id, "assistant", reply)
     return jsonify({"reply": reply, "audio_url": _voice_url(reply, scenario.get("voice_id"))})
 
 
