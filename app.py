@@ -253,6 +253,18 @@ OPENER_PROMPT = (
 MAX_REPLY_TOKENS = 400
 
 
+# Coaching feedback. The old 300-token ceiling was shared with the model's
+# thinking, so the written feedback was routinely cut off mid-sentence: the
+# Sharpen line stopped halfway and the Readiness line never arrived. The
+# budget now leaves room for thinking plus three full sections, and a reply
+# that still hits the ceiling is retried rather than shown half-finished.
+COACH_MAX_TOKENS = 2000
+
+COACH_ERROR_NOTICE = (
+    "The coaching review did not finish. Your conversation is saved, so try again."
+)
+
+
 class PersonaUnavailable(Exception):
     """The model could not be reached for this turn. Raised so the route can
     answer with a real status instead of a blank bubble."""
@@ -512,6 +524,9 @@ def _voice_url(text, voice_id="gJU2icYQsdEmbGJ65Z8W"):
 # ---------- Coaching feedback ----------
 
 def _coaching_feedback(scenario, history):
+    """Reviews the transcript. Returns the three sections, complete, or None
+    if the review could not be finished (the route then answers 503 with a
+    notice instead of showing a half-written verdict)."""
     transcript_lines = []
     for m in history:
         speaker = "Trainee" if m["role"] == "user" else scenario["persona_name"]
@@ -523,34 +538,79 @@ def _coaching_feedback(scenario, history):
         coach_focus=scenario["coach_focus"],
     )
 
-    if _client:
-        response = _client.messages.create(
-            model="claude-sonnet-5", max_tokens=300,
-            messages=[{"role": "user", "content": f"{prompt}\n\nTranscript:\n{transcript}"}],
-        )
-        text = _extract_text(response)
-        return _parse_feedback(text)
+    if not _client:
+        return {
+            "strengths": ["You stayed in the conversation and kept responding to pushback."],
+            "improve": ["Live, personalized coaching needs an Anthropic API key configured on this deployment."],
+            "readiness": "Connect an API key to get real feedback on this specific run.",
+        }
 
-    return {
-        "strengths": ["You stayed in the conversation and kept responding to pushback."],
-        "improve": ["Live, personalized coaching needs an Anthropic API key configured on this deployment."],
-        "readiness": "Connect an API key to get real feedback on this specific run.",
-    }
+    best = None
+    for max_tokens in (COACH_MAX_TOKENS, COACH_MAX_TOKENS * 2):
+        try:
+            response = _client.messages.create(
+                model="claude-sonnet-5", max_tokens=max_tokens,
+                messages=[{"role": "user", "content": f"{prompt}\n\nTranscript:\n{transcript}"}],
+            )
+        except Exception as exc:
+            app.logger.warning("coach call failed (max_tokens=%s): %r", max_tokens, exc)
+            continue
+        stop = getattr(response, "stop_reason", None)
+        feedback = _parse_feedback(_extract_text(response))
+        if stop != "max_tokens" and _feedback_complete(feedback):
+            return feedback
+        app.logger.warning(
+            "coach reply incomplete (max_tokens=%s, stop_reason=%s, sections=%s)",
+            max_tokens, stop,
+            {k: bool(v) for k, v in feedback.items()},
+        )
+        # A reply that finished on its own but skipped a section is still
+        # usable; one that was cut off is not, since its last line is partial.
+        if stop != "max_tokens" and (feedback["strengths"] or feedback["readiness"]):
+            best = feedback
+    return best
+
+
+def _feedback_complete(feedback):
+    return bool(feedback["strengths"] and feedback["improve"] and feedback["readiness"])
+
+
+_SECTION_ALIASES = {
+    "STRENGTHS": "strengths", "STRENGTH": "strengths",
+    "IMPROVE": "improve", "SHARPEN": "improve", "IMPROVEMENTS": "improve",
+    "READINESS": "readiness",
+}
 
 
 def _parse_feedback(text):
-    strengths, improve, readiness = [], [], ""
-    for line in text.split("\n"):
-        line = line.strip()
-        if line.upper().startswith("STRENGTHS:"):
-            strengths = [s.strip() for s in line.split(":", 1)[1].split("|") if s.strip()]
-        elif line.upper().startswith("IMPROVE:"):
-            improve = [s.strip() for s in line.split(":", 1)[1].split("|") if s.strip()]
-        elif line.upper().startswith("READINESS:"):
-            readiness = line.split(":", 1)[1].strip()
-    if not strengths and not improve and not readiness:
-        readiness = text[:300]
-    return {"strengths": strengths, "improve": improve, "readiness": readiness}
+    """Reads the STRENGTHS / IMPROVE / READINESS reply. Tolerates the ways a
+    model drifts from the format: markdown bold or headings around a label,
+    a label on its own line with the points as bullets underneath, and
+    SHARPEN used for IMPROVE."""
+    out = {"strengths": [], "improve": [], "readiness": ""}
+    current = None
+    for raw in (text or "").split("\n"):
+        line = raw.strip().strip("*_#").strip()
+        if not line:
+            continue
+        head, sep, rest = line.partition(":")
+        key = _SECTION_ALIASES.get(head.strip("*_# ").upper()) if sep else None
+        if key:
+            current = key
+            rest = rest.strip().strip("*_").strip()
+            if not rest:
+                continue
+            line = rest
+        elif current is None:
+            continue
+        bullet = line.lstrip("-•*0123456789.) ").strip()
+        if not bullet:
+            continue
+        if current == "readiness":
+            out["readiness"] = (out["readiness"] + " " + bullet).strip()
+        else:
+            out[current].extend(p.strip() for p in bullet.split("|") if p.strip())
+    return out
 
 
 # ---------- Routes ----------
@@ -946,17 +1006,30 @@ document.getElementById('feedback-btn').addEventListener('click', async () => {
   const btn = document.getElementById('feedback-btn');
   btn.disabled = true;
   btn.textContent = 'Reviewing your run...';
-  const resp = await fetch('/api/feedback', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({session_id: sessionId})
-  });
-  const data = await resp.json();
+  let resp = null, data = null;
+  try {
+    resp = await fetch('/api/feedback', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({session_id: sessionId})
+    });
+    data = await resp.json();
+  } catch (e) { data = null; }
   btn.disabled = false;
   btn.textContent = 'End & get coaching feedback';
 
   const card = document.getElementById('feedback-card');
   const body = document.getElementById('feedback-body');
   body.innerHTML = '';
+
+  if (!resp || !resp.ok || !data || data.error) {
+    const p = document.createElement('p');
+    p.textContent = (data && data.notice) || 'The coaching review did not finish. Your conversation is saved, so try again.';
+    body.appendChild(p);
+    card.classList.remove('hidden');
+    card.scrollIntoView({behavior: 'smooth', block: 'start'});
+    card.focus();
+    return;
+  }
 
   if (data.strengths && data.strengths.length) {
     const h = document.createElement('h3'); h.textContent = 'Strengths';
@@ -1070,7 +1143,12 @@ def api_feedback():
     scenario_id = _get_scenario_id(session_id)
     scenario = SCENARIOS.get(scenario_id, SCENARIOS["ld-tech"])
     history = _get_messages(session_id)
-    return jsonify(_coaching_feedback(scenario, history))
+    if not any(m["role"] == "user" for m in history):
+        return jsonify({"error": True, "notice": "Reply to the buyer at least once, then ask for coaching."}), 400
+    feedback = _coaching_feedback(scenario, history)
+    if not feedback:
+        return jsonify({"error": True, "notice": COACH_ERROR_NOTICE}), 503
+    return jsonify(feedback)
 
 
 if __name__ == "__main__":
